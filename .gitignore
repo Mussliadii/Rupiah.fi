@@ -1,0 +1,33 @@
+# Rust / Soroban
+target/
+**/*.rs.bk
+*.wasm
+.stellar/
+
+# Node
+node_modules/
+.next/
+out/
+dist/
+.env
+.env.local
+*.log
+npm-debug.log*
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.claude/
+
+# Local deploy artifacts
+**/.stellar-vault-id.txt
+
+# Hackathon reference material (third-party ideas + competition brief — not our work)
+Reference.md
+Hedgera.md
+Hashfash.md
+Aegis Protocol.md
+Description.md
+Form Question.md

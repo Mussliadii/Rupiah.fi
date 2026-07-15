@@ -1,0 +1,4 @@
+[toolchain]
+# GNU host bundles its own linker — avoids the multi-GB VS Build Tools MSVC dep.
+channel = "stable-x86_64-pc-windows-gnu"
+targets = ["wasm32v1-none"]
