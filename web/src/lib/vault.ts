@@ -103,8 +103,15 @@ export async function getShares(user: string): Promise<number> {
 }
 
 export async function getUsdcBalance(user: string): Promise<number> {
-  const v = await simRead(USDC_ID, "balance", [addrScVal(user)]);
-  return fromUnits(v as bigint);
+  // No trustline => SAC `balance` traps with Error(Contract, #13). That just
+  // means the account holds 0 USDC, so treat any read failure as a 0 balance
+  // rather than letting it break the dashboard.
+  try {
+    const v = await simRead(USDC_ID, "balance", [addrScVal(user)]);
+    return fromUnits(v as bigint);
+  } catch {
+    return 0;
+  }
 }
 
 /** Reflector oracle: latest price of a symbol (e.g. "XLM") in USD. Null if stale/absent. */
