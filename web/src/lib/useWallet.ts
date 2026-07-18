@@ -3,12 +3,17 @@
 import { useCallback, useEffect, useState } from "react";
 import freighter from "@stellar/freighter-api";
 
+// Freighter has no dapp-side revoke; "disconnect" means clearing our state and
+// remembering the choice so we don't silently re-adopt the address on reload.
+const DISCONNECT_FLAG = "rupia:wallet-disconnected";
+
 export function useWallet() {
   const [address, setAddress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
 
   useEffect(() => {
+    if (localStorage.getItem(DISCONNECT_FLAG)) return;
     freighter
       .getAddress()
       .then((r) => {
@@ -27,6 +32,7 @@ export function useWallet() {
       }
       const access = await freighter.requestAccess();
       if (access.error) throw new Error(access.error);
+      localStorage.removeItem(DISCONNECT_FLAG);
       setAddress(access.address);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -35,5 +41,11 @@ export function useWallet() {
     }
   }, []);
 
-  return { address, connect, connecting, error };
+  const disconnect = useCallback(() => {
+    localStorage.setItem(DISCONNECT_FLAG, "1");
+    setAddress(null);
+    setError(null);
+  }, []);
+
+  return { address, connect, disconnect, connecting, error };
 }

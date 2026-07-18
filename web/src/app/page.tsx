@@ -13,8 +13,20 @@ import {
   hasUsdcTrustline,
   mint,
   redeem,
+  removeUsdcTrustline,
   VAULT_ID,
 } from "@/lib/vault";
+import {
+  DEMO_PRICES,
+  demoConnect,
+  demoMint,
+  demoRedeem,
+  demoReset,
+  demoStats,
+  demoTrust,
+  demoUntrust,
+  demoYield,
+} from "@/lib/demo";
 
 type Stats = {
   nav: number;
@@ -30,6 +42,7 @@ type Dict = {
   subtitle: string;
   connect: string;
   connecting: string;
+  disconnect: string;
   problemBold: string;
   problemRest: string;
   navLabel: string;
@@ -43,6 +56,8 @@ type Dict = {
   connectPrompt: string;
   trustWarn: string;
   trustBtn: string;
+  untrustBtn: string;
+  untrustOk: string;
   processing: string;
   amount: string;
   depositBtn: string;
@@ -56,6 +71,10 @@ type Dict = {
   reserveOnchain: string;
   viewContract: string;
   footer: string;
+  demoToggle: string;
+  demoBadge: string;
+  demoYieldBtn: string;
+  demoYieldOk: string;
 };
 
 const STR: Record<Lang, Dict> = {
@@ -63,6 +82,7 @@ const STR: Record<Lang, Dict> = {
     subtitle: "Tabungan terdiversifikasi on-chain di Stellar",
     connect: "Hubungkan Freighter",
     connecting: "Menghubungkan…",
+    disconnect: "Putuskan",
     problemBold: "22,4 juta orang Indonesia",
     problemRest:
       " sudah pegang kripto — hampir 3× investor saham. Tapi hampir semua hanya spekulasi satu token. Rupia.fi ubah itu jadi tabungan terdiversifikasi berbunga: setor sekali, dapat basket aset yang nilainya (NAV) tumbuh dari yield, tarik kapan saja.",
@@ -78,6 +98,8 @@ const STR: Record<Lang, Dict> = {
     connectPrompt: "Hubungkan wallet untuk mulai.",
     trustWarn: "Wallet belum aktifkan USDC. Wajib sekali sebelum setor.",
     trustBtn: "Aktifkan USDC",
+    untrustBtn: "Nonaktifkan USDC (demo)",
+    untrustOk: "USDC dinonaktifkan. Banner aktivasi muncul lagi.",
     processing: "Memproses…",
     amount: "Jumlah",
     depositBtn: "Setor USDC",
@@ -93,11 +115,16 @@ const STR: Record<Lang, Dict> = {
     reserveOnchain: "Cadangan on-chain",
     viewContract: "Lihat kontrak di Stellar Expert →",
     footer: "APAC Stellar Hackathon · Track DeFi · Testnet MVP",
+    demoToggle: "Mode Demo",
+    demoBadge: "DEMO — data simulasi lokal",
+    demoYieldBtn: "Simulasi Yield +1%",
+    demoYieldOk: "Yield masuk! Cadangan naik 1%, NAV semua holder ikut naik.",
   },
   en: {
     subtitle: "Diversified on-chain savings on Stellar",
     connect: "Connect Freighter",
     connecting: "Connecting…",
+    disconnect: "Disconnect",
     problemBold: "22.4 million Indonesians",
     problemRest:
       " already hold crypto — nearly 3× the number of stock investors. But almost all of it is single-token speculation. Rupia.fi turns that into diversified, yield-bearing savings: deposit once, get a basket of assets whose value (NAV) grows from yield, withdraw anytime.",
@@ -114,6 +141,8 @@ const STR: Record<Lang, Dict> = {
     trustWarn:
       "Wallet hasn't activated USDC yet. Required once before depositing.",
     trustBtn: "Activate USDC",
+    untrustBtn: "Deactivate USDC (demo)",
+    untrustOk: "USDC deactivated. The activation banner is back.",
     processing: "Processing…",
     amount: "Amount",
     depositBtn: "Deposit USDC",
@@ -129,14 +158,21 @@ const STR: Record<Lang, Dict> = {
     reserveOnchain: "On-chain reserve",
     viewContract: "View contract on Stellar Expert →",
     footer: "APAC Stellar Hackathon · DeFi Track · Testnet MVP",
+    demoToggle: "Demo Mode",
+    demoBadge: "DEMO — locally simulated data",
+    demoYieldBtn: "Simulate Yield +1%",
+    demoYieldOk: "Yield arrived! Reserve up 1%, NAV rises for every holder.",
   },
 };
 
 const EXPLORER = `https://stellar.expert/explorer/testnet/contract/${VAULT_ID}`;
 
 export default function Home() {
-  const { address, connect, connecting, error: walletError } = useWallet();
+  const { address: realAddress, connect, disconnect, connecting, error: walletError } = useWallet();
   const [lang, setLang] = useState<Lang>("id");
+  const [demo, setDemo] = useState(false);
+  const [demoAddress, setDemoAddress] = useState<string | null>(null);
+  const address = demo ? demoAddress : realAddress;
   const [stats, setStats] = useState<Stats | null>(null);
   const [amount, setAmount] = useState("100");
   const [busy, setBusy] = useState<null | string>(null);
@@ -148,6 +184,20 @@ export default function Home() {
   const t = STR[lang];
 
   const refresh = useCallback(async () => {
+    if (demo) {
+      const s = await demoStats();
+      setPrices(DEMO_PRICES);
+      setTrusted(address ? s.trusted : null);
+      setStats({
+        nav: s.nav,
+        supply: s.supply,
+        reserve: s.reserve,
+        shares: address ? s.shares : 0,
+        usdc: address ? s.usdc : 0,
+      });
+      return;
+    }
+
     // Trustline status first and on its own, so a balance/oracle hiccup can
     // never hide the "Aktifkan USDC" banner.
     if (address) {
@@ -180,11 +230,36 @@ export default function Home() {
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     }
-  }, [address]);
+  }, [address, demo]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  const toggleDemo = () => {
+    const next = !demo;
+    setDemo(next);
+    setMsg(null);
+    setErr(null);
+    setStats(null);
+    setTrusted(null);
+    if (next) {
+      demoReset();
+      setDemoAddress(null);
+    }
+  };
+
+  const doConnect = async () => {
+    if (!demo) return connect();
+    setDemoAddress(await demoConnect());
+  };
+
+  const doDisconnect = () => {
+    if (!demo) return disconnect();
+    setDemoAddress(null);
+    setMsg(null);
+    setErr(null);
+  };
 
   const doMint = async () => {
     if (!address) return;
@@ -192,7 +267,8 @@ export default function Home() {
     setMsg(null);
     setErr(null);
     try {
-      await mint(address, Number(amount));
+      if (demo) await demoMint(Number(amount));
+      else await mint(address, Number(amount));
       setMsg(t.mintOk(amount));
       await refresh();
     } catch (e) {
@@ -208,7 +284,8 @@ export default function Home() {
     setMsg(null);
     setErr(null);
     try {
-      await redeem(address, Number(amount));
+      if (demo) await demoRedeem(Number(amount));
+      else await redeem(address, Number(amount));
       setMsg(t.redeemOk(amount));
       await refresh();
     } catch (e) {
@@ -224,11 +301,42 @@ export default function Home() {
     setMsg(null);
     setErr(null);
     try {
-      await addUsdcTrustline(address);
+      if (demo) await demoTrust();
+      else await addUsdcTrustline(address);
       setMsg(t.trustOk);
       await refresh();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const doUntrust = async () => {
+    if (!address) return;
+    setBusy("untrust");
+    setMsg(null);
+    setErr(null);
+    try {
+      if (demo) await demoUntrust();
+      else await removeUsdcTrustline(address);
+      setMsg(t.untrustOk);
+      await refresh();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const doYield = async () => {
+    setBusy("yield");
+    setMsg(null);
+    setErr(null);
+    try {
+      await demoYield();
+      setMsg(t.demoYieldOk);
+      await refresh();
     } finally {
       setBusy(null);
     }
@@ -248,6 +356,16 @@ export default function Home() {
           </div>
           <div className="flex items-center gap-2">
             <button
+              onClick={toggleDemo}
+              className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${
+                demo
+                  ? "bg-amber-500 text-white hover:bg-amber-600"
+                  : "border border-slate-300 text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              {t.demoToggle}
+            </button>
+            <button
               onClick={() => setLang(lang === "id" ? "en" : "id")}
               className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100"
               aria-label="Toggle language"
@@ -255,12 +373,20 @@ export default function Home() {
               {lang === "id" ? "EN" : "ID"}
             </button>
             {address ? (
-              <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-mono text-emerald-800">
-                {address.slice(0, 4)}…{address.slice(-4)}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-mono text-emerald-800">
+                  {address.slice(0, 4)}…{address.slice(-4)}
+                </span>
+                <button
+                  onClick={doDisconnect}
+                  className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                >
+                  {t.disconnect}
+                </button>
+              </div>
             ) : (
               <button
-                onClick={connect}
+                onClick={doConnect}
                 disabled={connecting}
                 className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
               >
@@ -270,7 +396,13 @@ export default function Home() {
           </div>
         </header>
 
-        {walletError && (
+        {demo && (
+          <p className="mt-3 rounded-lg bg-amber-50 p-3 text-center text-xs font-semibold text-amber-700 ring-1 ring-amber-200">
+            {t.demoBadge}
+          </p>
+        )}
+
+        {walletError && !demo && (
           <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">
             {walletError}
           </p>
@@ -376,6 +508,26 @@ export default function Home() {
             <p className="mt-3 text-xs text-slate-500">
               {t.balanceLine(stats.usdc.toFixed(2), stats.shares.toFixed(2))}
             </p>
+          )}
+          {address && trusted && (
+            <div className="mt-2 flex items-center gap-3">
+              <button
+                onClick={doUntrust}
+                disabled={busy !== null}
+                className="text-xs text-slate-400 underline hover:text-slate-600 disabled:opacity-50"
+              >
+                {busy === "untrust" ? t.processing : t.untrustBtn}
+              </button>
+              {demo && (
+                <button
+                  onClick={doYield}
+                  disabled={busy !== null}
+                  className="rounded-lg bg-indigo-600 px-3 py-1 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {busy === "yield" ? t.processing : t.demoYieldBtn}
+                </button>
+              )}
+            </div>
           )}
           {msg && (
             <p className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">

@@ -189,15 +189,14 @@ export async function hasUsdcTrustline(user: string): Promise<boolean> {
   }
 }
 
-/** Build+sign (Freighter) a classic change_trust op to activate USDC. */
-export async function addUsdcTrustline(user: string): Promise<void> {
+async function changeUsdcTrust(user: string, limit?: string): Promise<void> {
   const source = await horizon.loadAccount(user);
   const built = new TransactionBuilder(source, {
     fee: BASE_FEE,
     networkPassphrase: NETWORK_PASSPHRASE,
   })
     .addOperation(
-      Operation.changeTrust({ asset: new Asset(USDC_CODE, USDC_ISSUER) }),
+      Operation.changeTrust({ asset: new Asset(USDC_CODE, USDC_ISSUER), limit }),
     )
     .setTimeout(60)
     .build();
@@ -208,6 +207,17 @@ export async function addUsdcTrustline(user: string): Promise<void> {
   });
   const tx = TransactionBuilder.fromXDR(signed.signedTxXdr, NETWORK_PASSPHRASE);
   await horizon.submitTransaction(tx);
+}
+
+/** Build+sign (Freighter) a classic change_trust op to activate USDC. */
+export async function addUsdcTrustline(user: string): Promise<void> {
+  await changeUsdcTrust(user);
+}
+
+/** Demo helper: drop the USDC trustline (limit 0) so the "Aktifkan USDC" flow
+ * can be re-demoed. Fails on-chain unless the USDC balance is exactly 0. */
+export async function removeUsdcTrustline(user: string): Promise<void> {
+  await changeUsdcTrust(user, "0");
 }
 
 export async function mint(user: string, human: number): Promise<void> {
